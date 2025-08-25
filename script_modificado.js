@@ -22,6 +22,124 @@ function agruparStatusConsecutivos(statusArray) {
     return grupos;
 }
 
+// Função para verificar se o projeto tem Go Live concluído
+function temGoLiveConcluido(implantacao) {
+    if (!implantacao.fases) return false;
+    
+    const goLiveFase = implantacao.fases.find(fase => 
+        fase.nome.toLowerCase().includes('go live') || fase.nome.toLowerCase().includes('golive')
+    );
+    
+    return goLiveFase && (goLiveFase.status === 'concluido-prazo' || goLiveFase.status === 'concluido-fora');
+}
+
+// Função para verificar se o projeto tem Kick Off concluído
+function temKickOffConcluido(implantacao) {
+    if (!implantacao.fases) return false;
+    
+    const kickOffFase = implantacao.fases.find(fase => 
+        fase.nome.toLowerCase().includes('kick off') || fase.nome.toLowerCase().includes('kickoff')
+    );
+    
+    return kickOffFase && (kickOffFase.status === 'concluido-prazo' || kickOffFase.status === 'concluido-fora');
+}
+
+// Função para obter a data de Go Live
+function getDataGoLive(implantacao) {
+    if (!implantacao.fases) return null;
+    
+    const goLiveFase = implantacao.fases.find(fase => 
+        fase.nome.toLowerCase().includes('go live') || fase.nome.toLowerCase().includes('golive')
+    );
+    
+    if (goLiveFase && goLiveFase.fim && (goLiveFase.status === 'concluido-prazo' || goLiveFase.status === 'concluido-fora')) {
+        return new Date(goLiveFase.fim);
+    }
+    
+    return null;
+}
+
+// Função para obter a data de Kick Off
+function getDataKickOff(implantacao) {
+    if (!implantacao.fases) return null;
+    
+    const kickOffFase = implantacao.fases.find(fase => 
+        fase.nome.toLowerCase().includes('kick off') || fase.nome.toLowerCase().includes('kickoff')
+    );
+    
+    if (kickOffFase && kickOffFase.inicio) {
+        return new Date(kickOffFase.inicio);
+    }
+    
+    return null;
+}
+
+// Função para verificar se deve mostrar "sem dados" baseado no Go Live e Kick Off
+function deveExibirSemDados(implantacao, ano, mes) {
+    const dataGoLive = getDataGoLive(implantacao);
+    const dataKickOff = getDataKickOff(implantacao);
+    
+    // Verificar Go Live (meses posteriores)
+    if (dataGoLive) {
+        const anoGoLive = dataGoLive.getFullYear();
+        const mesGoLive = dataGoLive.getMonth();
+        
+        // Se o ano solicitado é posterior ao ano do Go Live, sempre "sem dados"
+        if (ano > anoGoLive) return true;
+        
+        // Se é o mesmo ano do Go Live, verificar se o mês é posterior ao Go Live
+        if (ano === anoGoLive && mes > mesGoLive) return true;
+    }
+    
+    // Verificar Kick Off (meses anteriores)
+    if (dataKickOff) {
+        const anoKickOff = dataKickOff.getFullYear();
+        const mesKickOff = dataKickOff.getMonth();
+        
+        // Se o ano solicitado é anterior ao ano do Kick Off, sempre "sem dados"
+        if (ano < anoKickOff) return true;
+        
+        // Se é o mesmo ano do Kick Off, verificar se o mês é anterior ao Kick Off
+        if (ano === anoKickOff && mes < mesKickOff) return true;
+    }
+    
+    return false;
+}
+
+// Função para verificar se o projeto deve aparecer no ano selecionado
+function projetoDeveAparecerNoAno(implantacao, ano) {
+    const dataGoLive = getDataGoLive(implantacao);
+    const dataKickOff = getDataKickOff(implantacao);
+    
+    // Se tem Go Live concluído, só mostrar até o ano do Go Live
+    if (dataGoLive && ano > dataGoLive.getFullYear()) {
+        return false;
+    }
+    
+    // Se tem Kick Off definido, só mostrar a partir do ano do Kick Off
+    if (dataKickOff && ano < dataKickOff.getFullYear()) {
+        return false;
+    }
+    
+    // Se não tem Kick Off nem Go Live definidos, usar lógica original
+    if (!dataKickOff && !dataGoLive) {
+        const anoInicio = implantacao.anoInicio || new Date().getFullYear();
+        return (anoInicio <= ano && (implantacao.statusMeses[ano] || implantacao.statusMeses.janeiro)) ||
+               implantacao.fases.some(fase => {
+                   if (fase.inicio && fase.fim) {
+                       const dataInicio = new Date(fase.inicio);
+                       const dataFim = new Date(fase.fim);
+                       const anoFaseInicio = dataInicio.getFullYear();
+                       const anoFaseFim = dataFim.getFullYear();
+                       return (anoFaseInicio <= ano && anoFaseFim >= ano);
+                   }
+                   return false;
+               });
+    }
+    
+    return true;
+}
+
 // Variáveis globais
 let implantacoes = [];
 let implantacaoAtual = null;
@@ -214,30 +332,10 @@ function carregarPainelProjetos() {
     const tbody = document.getElementById('tabela-body');
     tbody.innerHTML = '';
     
-    // Para compatibilidade, mostrar todas as implantações se não houver filtro específico por ano
-    // ou se os dados não têm estrutura de anos
-    let implantacoesFiltradas = implantacoes;
-    
-    // Se há implantações, verificar se alguma tem dados específicos para o ano
-    if (implantacoes.length > 0) {
-        implantacoesFiltradas = implantacoes.filter(implantacao => {
-            // Se não tem anoInicio definido, assumir que é do ano atual
-            const anoInicio = implantacao.anoInicio || new Date().getFullYear();
-            
-            // Verificar se a implantação tem dados para o ano selecionado
-            return (anoInicio <= anoSelecionado && (implantacao.statusMeses[anoSelecionado] || implantacao.statusMeses.janeiro)) ||
-                   implantacao.fases.some(fase => {
-                       if (fase.inicio && fase.fim) {
-                           const dataInicio = new Date(fase.inicio);
-                           const dataFim = new Date(fase.fim);
-                           const anoFaseInicio = dataInicio.getFullYear();
-                           const anoFaseFim = dataFim.getFullYear();
-                           return (anoFaseInicio <= anoSelecionado && anoFaseFim >= anoSelecionado);
-                       }
-                       return false;
-                   });
-        });
-    }
+    // Filtrar implantações baseado no Go Live e Kick Off
+    let implantacoesFiltradas = implantacoes.filter(implantacao => {
+        return projetoDeveAparecerNoAno(implantacao, anoSelecionado);
+    });
     
     implantacoesFiltradas.forEach(implantacao => {
         const row = criarLinhaImplantacao(implantacao);
@@ -264,12 +362,32 @@ function criarLinhaImplantacao(implantacao) {
     // Obter status dos meses para o ano selecionado
     const statusMesesAno = obterStatusMesesPorAno(implantacao, anoSelecionado);
     
+    // Verificar se o projeto tem Go Live concluído
+    const goLiveConcluido = temGoLiveConcluido(implantacao);
+    const kickOffConcluido = temKickOffConcluido(implantacao);
+    const dataGoLive = getDataGoLive(implantacao);
+    const dataKickOff = getDataKickOff(implantacao);
+    
     // Adicionar classe destacado se houver atraso
     const temAtraso = Object.values(statusMesesAno).some(semanas => 
         semanas && semanas.some(status => status === 'atrasado')
     );
     if (temAtraso) {
         row.classList.add('destacado');
+    }
+    
+    // Se Go Live concluído, adicionar classe especial
+    if (goLiveConcluido) {
+        row.classList.add('projeto-finalizado');
+        row.style.backgroundColor = '#f0f8f0';
+        row.style.borderLeft = '4px solid #4CAF50';
+    }
+    
+    // Se projeto não iniciou (sem Kick Off), adicionar classe especial
+    if (dataKickOff && !kickOffConcluido) {
+        row.classList.add('projeto-nao-iniciado');
+        row.style.backgroundColor = '#f8f8f0';
+        row.style.borderLeft = '4px solid #FF9800';
     }
     
     // Verificar se tem Kick Off e Go Live
@@ -288,57 +406,93 @@ function criarLinhaImplantacao(implantacao) {
         fase.nome.toLowerCase().includes('go live') || fase.nome.toLowerCase().includes('golive')
     );
     
+    // Determinar o status do projeto
+    let statusProjeto = implantacao.status;
+    if (goLiveConcluido) {
+        statusProjeto = "Finalizado";
+    } else if (dataKickOff && !kickOffConcluido) {
+        statusProjeto = "Não Iniciado";
+    }
+    
     // Células básicas
     row.innerHTML = `
         <td>${implantacao.empresa}</td>
         <td>${implantacao.projeto}</td>
         <td>${implantacao.sistema}</td>
-        <td>${implantacao.progresso}%</td>
+        <td>${goLiveConcluido ? '100' : implantacao.progresso}%</td>
     `;
     
     // Células dos meses
     meses.forEach((mes, indexMes) => {
         const cell = document.createElement('td');
-        const statusSemanas = statusMesesAno[mes] || ["pendente", "pendente", "pendente", "pendente"];
         
-        // Agrupar status consecutivos iguais
-        const gruposStatus = agruparStatusConsecutivos(statusSemanas);
-        
-        gruposStatus.forEach(grupo => {
-            const statusBar = document.createElement('div');
-            statusBar.className = `status-bar status-${grupo.status}`;
-            statusBar.style.width = `${(grupo.quantidade / statusSemanas.length) * 100}%`;
-            statusBar.title = `${nomesMeses[meses.indexOf(mes)]} ${anoSelecionado}: ${grupo.status.replace('-', ' ')} (${grupo.quantidade} semana${grupo.quantidade > 1 ? 's' : ''})`;
-            cell.appendChild(statusBar);
-        });
-        
-        // Adicionar ícones de Kick Off e Go Live se a fase ocorrer neste mês
-        if (implantacao.fases) {
-            implantacao.fases.forEach(fase => {
-                const faseNomeLower = fase.nome.toLowerCase();
-                const isKickOff = faseNomeLower.includes('kick off') || faseNomeLower.includes('kickoff');
-                const isGoLive = faseNomeLower.includes('go live') || faseNomeLower.includes('golive');
-
-                if ((isKickOff || isGoLive) && fase.inicio && fase.fim) {
-                    const dataInicio = new Date(fase.inicio);
-                    const dataFim = new Date(fase.fim);
-                    const mesFaseInicio = dataInicio.getMonth();
-                    const mesFaseFim = dataFim.getMonth();
-                    const anoFaseInicio = dataInicio.getFullYear();
-                    const anoFaseFim = dataFim.getFullYear();
-
-                    // Verificar se a fase ocorre no mês e ano atual da iteração
-                    if (anoFaseInicio <= anoSelecionado && anoFaseFim >= anoSelecionado &&
-                        indexMes >= mesFaseInicio && indexMes <= mesFaseFim) {
-                        
-                        const icone = document.createElement('span');
-                        icone.className = `icone-fase ${isKickOff ? 'icone-inicio' : 'icone-golive'} ${fase.status === 'concluido-prazo' ? 'concluido' : fase.status === 'andamento' ? 'andamento' : 'pendente'}`;
-                        icone.title = `${fase.nome}: ${fase.status.replace('-', ' ')}`;
-                        icone.textContent = isKickOff ? '📍' : '🏴';
-                        cell.appendChild(icone);
-                    }
-                }
+        // Verificar se deve mostrar "sem dados" para este mês
+        if (deveExibirSemDados(implantacao, anoSelecionado, indexMes)) {
+            const motivo = dataGoLive && anoSelecionado === dataGoLive.getFullYear() && indexMes > dataGoLive.getMonth() 
+                ? "Projeto finalizado - sem dados"
+                : "Projeto não iniciado - sem dados";
+            
+            cell.innerHTML = '<div class="sem-dados" title="' + motivo + '">-</div>';
+            cell.style.textAlign = 'center';
+            cell.style.color = '#999';
+            cell.style.fontStyle = 'italic';
+        } else {
+            const statusSemanas = statusMesesAno[mes] || ["pendente", "pendente", "pendente", "pendente"];
+            
+            // Agrupar status consecutivos iguais
+            const gruposStatus = agruparStatusConsecutivos(statusSemanas);
+            
+            gruposStatus.forEach(grupo => {
+                const statusBar = document.createElement('div');
+                statusBar.className = `status-bar status-${grupo.status}`;
+                statusBar.style.width = `${(grupo.quantidade / statusSemanas.length) * 100}%`;
+                statusBar.title = `${nomesMeses[meses.indexOf(mes)]} ${anoSelecionado}: ${grupo.status.replace('-', ' ')} (${grupo.quantidade} semana${grupo.quantidade > 1 ? 's' : ''})`;
+                cell.appendChild(statusBar);
             });
+            
+            // Adicionar ícones de Kick Off e Go Live se a fase ocorrer neste mês
+            if (implantacao.fases) {
+                implantacao.fases.forEach(fase => {
+                    const faseNomeLower = fase.nome.toLowerCase();
+                    const isKickOff = faseNomeLower.includes('kick off') || faseNomeLower.includes('kickoff');
+                    const isGoLive = faseNomeLower.includes('go live') || faseNomeLower.includes('golive');
+
+                    if ((isKickOff || isGoLive) && fase.inicio && fase.fim) {
+                        const dataInicio = new Date(fase.inicio);
+                        const dataFim = new Date(fase.fim);
+                        const mesFaseInicio = dataInicio.getMonth();
+                        const mesFaseFim = dataFim.getMonth();
+                        const anoFaseInicio = dataInicio.getFullYear();
+                        const anoFaseFim = dataFim.getFullYear();
+
+                        // Verificar se a fase ocorre no mês e ano atual da iteração
+                        if (anoFaseInicio <= anoSelecionado && anoFaseFim >= anoSelecionado &&
+                            indexMes >= mesFaseInicio && indexMes <= mesFaseFim) {
+                            
+                            const icone = document.createElement('span');
+                            icone.className = `icone-fase ${isKickOff ? 'icone-inicio' : 'icone-golive'} ${fase.status === 'concluido-prazo' ? 'concluido' : fase.status === 'andamento' ? 'andamento' : 'pendente'}`;
+                            icone.title = `${fase.nome}: ${fase.status.replace('-', ' ')}`;
+                            icone.textContent = isKickOff ? '📍' : '🏴';
+                            
+                            // Se é Go Live concluído, destacar com cor especial
+                            if (isGoLive && (fase.status === 'concluido-prazo' || fase.status === 'concluido-fora')) {
+                                icone.style.color = '#4CAF50';
+                                icone.style.fontSize = '16px';
+                                icone.title += ' - PROJETO FINALIZADO';
+                            }
+                            
+                            // Se é Kick Off concluído, destacar
+                            if (isKickOff && (fase.status === 'concluido-prazo' || fase.status === 'concluido-fora')) {
+                                icone.style.color = '#2196F3';
+                                icone.style.fontSize = '16px';
+                                icone.title += ' - PROJETO INICIADO';
+                            }
+                            
+                            cell.appendChild(icone);
+                        }
+                    }
+                });
+            }
         }
         
         row.appendChild(cell);
@@ -352,75 +506,177 @@ function criarLinhaImplantacao(implantacao) {
 
 // Obter status dos meses para um ano específico
 function obterStatusMesesPorAno(implantacao, ano) {
+    // Verificar se deve mostrar "sem dados" para todo o ano
+    const dataGoLive = getDataGoLive(implantacao);
+    const dataKickOff = getDataKickOff(implantacao);
+    
+    // Se ano posterior ao Go Live, todos os meses são "sem dados"
+    if (dataGoLive && ano > dataGoLive.getFullYear()) {
+        const statusSemDados = {};
+        meses.forEach(mes => {
+            statusSemDados[mes] = ["sem-dados", "sem-dados", "sem-dados", "sem-dados"];
+        });
+        return statusSemDados;
+    }
+    
+    // Se ano anterior ao Kick Off, todos os meses são "sem dados"
+    if (dataKickOff && ano < dataKickOff.getFullYear()) {
+        const statusSemDados = {};
+        meses.forEach(mes => {
+            statusSemDados[mes] = ["sem-dados", "sem-dados", "sem-dados", "sem-dados"];
+        });
+        return statusSemDados;
+    }
+    
     // Se existe dados específicos para o ano
     if (implantacao.statusMeses && implantacao.statusMeses[ano]) {
-        return implantacao.statusMeses[ano];
+        const statusAno = implantacao.statusMeses[ano];
+        
+        // Aplicar limitações do Kick Off e Go Live no mesmo ano
+        if ((dataKickOff && ano === dataKickOff.getFullYear()) || (dataGoLive && ano === dataGoLive.getFullYear())) {
+            const mesKickOff = dataKickOff ? dataKickOff.getMonth() : -1;
+            const mesGoLive = dataGoLive ? dataGoLive.getMonth() : 12;
+            const statusLimitado = {};
+            
+            meses.forEach((mes, index) => {
+                if (index < mesKickOff || index > mesGoLive) {
+                    statusLimitado[mes] = ["sem-dados", "sem-dados", "sem-dados", "sem-dados"];
+                } else {
+                    statusLimitado[mes] = statusAno[mes] || ["pendente", "pendente", "pendente", "pendente"];
+                }
+            });
+            
+            return statusLimitado;
+        }
+        
+        return statusAno;
     }
     
     // Se existe o formato antigo (sem separação por ano)
     if (implantacao.statusMeses && !implantacao.statusMeses[ano] && typeof implantacao.statusMeses.janeiro !== 'undefined') {
         // Assumir que os dados são do ano atual ou ano de início
         if (ano === new Date().getFullYear() || ano === implantacao.anoInicio) {
-            return implantacao.statusMeses;
+            const statusAntigo = implantacao.statusMeses;
+            
+            // Aplicar limitações do Kick Off e Go Live
+            if ((dataKickOff && ano === dataKickOff.getFullYear()) || (dataGoLive && ano === dataGoLive.getFullYear())) {
+                const mesKickOff = dataKickOff ? dataKickOff.getMonth() : -1;
+                const mesGoLive = dataGoLive ? dataGoLive.getMonth() : 12;
+                const statusLimitado = {};
+                
+                meses.forEach((mes, index) => {
+                    if (index < mesKickOff || index > mesGoLive) {
+                        statusLimitado[mes] = ["sem-dados", "sem-dados", "sem-dados", "sem-dados"];
+                    } else {
+                        statusLimitado[mes] = statusAntigo[mes] || ["pendente", "pendente", "pendente", "pendente"];
+                    }
+                });
+                
+                return statusLimitado;
+            }
+            
+            return statusAntigo;
         }
     }
     
-    // Gerar status baseado nas fases para o ano
-    const statusAno = {};
-    meses.forEach(mes => {
-        statusAno[mes] = ["sem-dados", "sem-dados", "sem-dados", "sem-dados"];
-    });
-    
-    // Aplicar status das fases que ocorrem no ano
-    if (implantacao.fases) {
-        implantacao.fases.forEach(fase => {
-            if (fase.inicio && fase.fim) {
-                const dataInicio = new Date(fase.inicio);
-                const dataFim = new Date(fase.fim);
-                
-                const anoInicio = dataInicio.getFullYear();
-                const anoFim = dataFim.getFullYear();
-                
-                // Verificar se a fase se sobrepõe ao ano selecionado
-                if (anoInicio <= ano && anoFim >= ano) {
-                    const mesInicio = anoInicio === ano ? dataInicio.getMonth() : 0;
-                    const mesFim = anoFim === ano ? dataFim.getMonth() : 11;
-                    
-                    for (let mes = mesInicio; mes <= mesFim; mes++) {
-                        const nomeMes = meses[mes];
-                        statusAno[nomeMes] = [fase.status, fase.status, fase.status, fase.status];
-                    }
-                }
-            }
-        });
-    }
-    
-    return statusAno;
+    // Gerar status baseado nas fases para o ano específico
+    return gerarStatusMesesPorFases(implantacao, ano);
 }
 
-// Exibir tela de status de implantação
+// Gerar status dos meses baseado nas fases
+function gerarStatusMesesPorFases(implantacao, ano) {
+    const statusMeses = {};
+    
+    // Inicializar todos os meses como pendente
+    meses.forEach(mes => {
+        statusMeses[mes] = ["pendente", "pendente", "pendente", "pendente"];
+    });
+    
+    if (!implantacao.fases) return statusMeses;
+    
+    // Verificar limitações do Kick Off e Go Live
+    const dataKickOff = getDataKickOff(implantacao);
+    const dataGoLive = getDataGoLive(implantacao);
+    
+    let mesInicial = 0; // Janeiro por padrão
+    let mesFinal = 11; // Dezembro por padrão
+    
+    // Limitar início baseado no Kick Off
+    if (dataKickOff && ano === dataKickOff.getFullYear()) {
+        mesInicial = dataKickOff.getMonth();
+    } else if (dataKickOff && ano < dataKickOff.getFullYear()) {
+        // Se o ano é anterior ao Kick Off, todos os meses são "sem dados"
+        meses.forEach(mes => {
+            statusMeses[mes] = ["sem-dados", "sem-dados", "sem-dados", "sem-dados"];
+        });
+        return statusMeses;
+    }
+    
+    // Limitar fim baseado no Go Live
+    if (dataGoLive && ano === dataGoLive.getFullYear()) {
+        mesFinal = dataGoLive.getMonth();
+    } else if (dataGoLive && ano > dataGoLive.getFullYear()) {
+        // Se o ano é posterior ao Go Live, todos os meses são "sem dados"
+        meses.forEach(mes => {
+            statusMeses[mes] = ["sem-dados", "sem-dados", "sem-dados", "sem-dados"];
+        });
+        return statusMeses;
+    }
+    
+    // Marcar meses fora do período como "sem dados"
+    meses.forEach((mes, index) => {
+        if (index < mesInicial || index > mesFinal) {
+            statusMeses[mes] = ["sem-dados", "sem-dados", "sem-dados", "sem-dados"];
+        }
+    });
+    
+    // Aplicar status das fases aos meses válidos
+    implantacao.fases.forEach(fase => {
+        if (fase.inicio && fase.fim) {
+            const dataInicio = new Date(fase.inicio);
+            const dataFim = new Date(fase.fim);
+            const anoInicio = dataInicio.getFullYear();
+            const anoFim = dataFim.getFullYear();
+            
+            // Verificar se a fase ocorre no ano especificado
+            if (anoInicio <= ano && anoFim >= ano) {
+                const mesInicioFase = anoInicio === ano ? dataInicio.getMonth() : 0;
+                const mesFimFase = anoFim === ano ? dataFim.getMonth() : 11;
+                
+                // Aplicar o status da fase aos meses correspondentes, respeitando os limites
+                for (let mes = Math.max(mesInicioFase, mesInicial); mes <= Math.min(mesFimFase, mesFinal); mes++) {
+                    const nomeMes = meses[mes];
+                    statusMeses[nomeMes] = [fase.status, fase.status, fase.status, fase.status];
+                }
+            }
+        }
+    });
+    
+    return statusMeses;
+}
+
+// Exibir status de implantação
 function exibirStatusImplantacao(implantacao) {
     implantacaoAtual = implantacao;
     
-    // Ocultar painel de projetos e mostrar status
+    // Verificar se o projeto está finalizado ou não iniciado
+    const goLiveConcluido = temGoLiveConcluido(implantacao);
+    const kickOffConcluido = temKickOffConcluido(implantacao);
+    const dataKickOff = getDataKickOff(implantacao);
+    
     document.getElementById('painel-projetos').classList.add('hidden');
     document.getElementById('status-implantacao').classList.remove('hidden');
     
     // Preencher dados da empresa
-    preencherDadosEmpresa(implantacao);
+    const empresaDados = document.getElementById('empresa-dados');
+    empresaDados.innerHTML = `
+        <td>${implantacao.empresa}</td>
+        <td>${implantacao.sistema}</td>
+        <td>${implantacao.gestor}</td>
+        <td>${implantacao.especialista}</td>
+    `;
     
-    // Atualizar barra de progresso
-    atualizarBarraProgresso(implantacao.progresso);
-    
-    // Carregar timeline detalhada
-    carregarTimelineDetalhada(implantacao);
-    
-    // Preencher resumo operacional e status
-    preencherResumoStatus(implantacao);
-}
-
-// Preencher dados da empresa
-function preencherDadosEmpresa(implantacao) {
+    // Configurar logo
     const logoImg = document.getElementById('logo-img');
     const logoText = document.getElementById('logo-text');
     
@@ -434,13 +690,73 @@ function preencherDadosEmpresa(implantacao) {
         logoText.textContent = implantacao.empresa.substring(0, 3).toUpperCase();
     }
     
-    const empresaDados = document.getElementById('empresa-dados');
-    empresaDados.innerHTML = `
-        <td>${implantacao.empresa}</td>
-        <td>${implantacao.sistema}</td>
-        <td>${implantacao.gestor}</td>
-        <td>${implantacao.especialista}</td>
-    `;
+    // Atualizar progresso
+    let progressoFinal = implantacao.progresso;
+    if (goLiveConcluido) {
+        progressoFinal = 100;
+    } else if (dataKickOff && !kickOffConcluido) {
+        progressoFinal = 0;
+    }
+    atualizarBarraProgresso(progressoFinal);
+    
+    // Carregar timeline detalhada
+    carregarTimelineDetalhada(implantacao);
+    
+    // Preencher resumo e status
+    preencherResumoStatus(implantacao);
+    
+    // Adicionar indicações visuais baseado no status
+    const headerContent = document.querySelector('.header-content h1');
+    
+    // Remover badges anteriores
+    const badgeAnterior = headerContent.querySelector('.projeto-status-badge');
+    if (badgeAnterior) {
+        badgeAnterior.remove();
+    }
+    
+    if (goLiveConcluido) {
+        const statusBadge = document.getElementById('status-badge');
+        statusBadge.textContent = 'Finalizado';
+        statusBadge.className = 'status-badge status-finalizado';
+        statusBadge.style.backgroundColor = '#4CAF50';
+        statusBadge.style.color = 'white';
+        
+        // Adicionar badge de projeto finalizado
+        const badge = document.createElement('span');
+        badge.className = 'projeto-status-badge';
+        badge.textContent = '✅ FINALIZADO';
+        badge.style.cssText = `
+            background: #4CAF50;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-left: 10px;
+            font-weight: bold;
+        `;
+        headerContent.appendChild(badge);
+    } else if (dataKickOff && !kickOffConcluido) {
+        const statusBadge = document.getElementById('status-badge');
+        statusBadge.textContent = 'Não Iniciado';
+        statusBadge.className = 'status-badge status-nao-iniciado';
+        statusBadge.style.backgroundColor = '#FF9800';
+        statusBadge.style.color = 'white';
+        
+        // Adicionar badge de projeto não iniciado
+        const badge = document.createElement('span');
+        badge.className = 'projeto-status-badge';
+        badge.textContent = '⏳ NÃO INICIADO';
+        badge.style.cssText = `
+            background: #FF9800;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-left: 10px;
+            font-weight: bold;
+        `;
+        headerContent.appendChild(badge);
+    }
 }
 
 // Atualizar barra de progresso
@@ -450,56 +766,148 @@ function atualizarBarraProgresso(progresso) {
     
     progressoFill.style.width = `${progresso}%`;
     progressoTexto.textContent = `${progresso}%`;
+    
+    // Alterar cor baseado no progresso
+    if (progresso === 100) {
+        progressoFill.style.background = 'linear-gradient(90deg, #4CAF50, #45a049)';
+    } else if (progresso === 0) {
+        progressoFill.style.background = 'linear-gradient(90deg, #FF9800, #F57C00)';
+    } else if (progresso >= 75) {
+        progressoFill.style.background = 'linear-gradient(90deg, #2196F3, #1976D2)';
+    } else if (progresso >= 50) {
+        progressoFill.style.background = 'linear-gradient(90deg, #FF9800, #F57C00)';
+    } else {
+        progressoFill.style.background = 'linear-gradient(90deg, #f44336, #d32f2f)';
+    }
+}
+
+// Recalcular progresso baseado nas fases
+function recalcularProgresso() {
+    if (!implantacaoAtual) return;
+    
+    let totalPrevisto = 0;
+    let totalRealizado = 0;
+    
+    implantacaoAtual.fases.forEach(fase => {
+        totalPrevisto += parseInt(fase.previsto) || 0;
+        totalRealizado += parseInt(fase.realizado) || 0;
+    });
+    
+    let novoProgresso = 0;
+    if (totalPrevisto > 0) {
+        novoProgresso = Math.round((totalRealizado / totalPrevisto) * 100);
+    }
+    
+    // Se Go Live está concluído, progresso é sempre 100%
+    if (temGoLiveConcluido(implantacaoAtual)) {
+        novoProgresso = 100;
+    }
+    // Se Kick Off não foi concluído, progresso é 0%
+    else if (getDataKickOff(implantacaoAtual) && !temKickOffConcluido(implantacaoAtual)) {
+        novoProgresso = 0;
+    }
+    
+    implantacaoAtual.progresso = novoProgresso;
+    atualizarBarraProgresso(novoProgresso);
+}
+
+// Atualizar status dos meses baseado nas fases
+function atualizarStatusMeses() {
+    if (!implantacaoAtual) return;
+    
+    const anoAtual = new Date().getFullYear();
+    const statusMesesAtualizado = gerarStatusMesesPorFases(implantacaoAtual, anoAtual);
+    
+    // Atualizar ou criar estrutura de anos
+    if (!implantacaoAtual.statusMeses) {
+        implantacaoAtual.statusMeses = {};
+    }
+    
+    implantacaoAtual.statusMeses[anoAtual] = statusMesesAtualizado;
+    
+    // Atualizar status geral baseado no estado do projeto
+    if (temGoLiveConcluido(implantacaoAtual)) {
+        implantacaoAtual.status = "Finalizado";
+    } else if (getDataKickOff(implantacaoAtual) && !temKickOffConcluido(implantacaoAtual)) {
+        implantacaoAtual.status = "Não Iniciado";
+    } else {
+        implantacaoAtual.status = "Em andamento";
+    }
 }
 
 // Carregar timeline detalhada
 function carregarTimelineDetalhada(implantacao) {
-    const timelineBody = document.getElementById("timeline-body");
-    timelineBody.innerHTML = "";
-
-    // Encontrar o período mínimo e máximo das fases
+    const timelineBody = document.getElementById('timeline-body');
+    timelineBody.innerHTML = '';
+    
+    if (!implantacao.fases || implantacao.fases.length === 0) {
+        const row = document.createElement('tr');
+        row.innerHTML = '<td colspan="100%">Nenhuma fase definida</td>';
+        timelineBody.appendChild(row);
+        return;
+    }
+    
+    // Verificar se o projeto está finalizado ou não iniciado
+    const goLiveConcluido = temGoLiveConcluido(implantacao);
+    const kickOffConcluido = temKickOffConcluido(implantacao);
+    const dataGoLive = getDataGoLive(implantacao);
+    const dataKickOff = getDataKickOff(implantacao);
+    
+    // Calcular intervalo de datas
     let minDate = null;
     let maxDate = null;
-
-    implantacao.fases.forEach((fase) => {
+    
+    implantacao.fases.forEach(fase => {
         if (fase.inicio && fase.fim) {
             const inicio = new Date(fase.inicio + "T00:00:00");
             const fim = new Date(fase.fim + "T00:00:00");
-
-            if (!minDate || inicio < minDate) {
-                minDate = inicio;
-            }
-            if (!maxDate || fim > maxDate) {
-                maxDate = fim;
-            }
+            
+            if (!minDate || inicio < minDate) minDate = inicio;
+            if (!maxDate || fim > maxDate) maxDate = fim;
         }
     });
-
-    // Se não houver fases com datas, usar um período padrão (ex: 3 meses a partir de hoje)
+    
     if (!minDate || !maxDate) {
-        minDate = new Date();
-        minDate.setMonth(minDate.getMonth() - 1); // Começa 1 mês antes
-        maxDate = new Date();
-        maxDate.setMonth(maxDate.getMonth() + 2); // Termina 2 meses depois
+        const row = document.createElement('tr');
+        row.innerHTML = '<td colspan="100%">Datas das fases não definidas</td>';
+        timelineBody.appendChild(row);
+        return;
     }
-
-    // Ajustar minDate para o início do mês e maxDate para o final do mês
-    minDate.setDate(1);
-    maxDate.setMonth(maxDate.getMonth() + 1, 0); // Último dia do mês
-
-    // Gerar cabeçalho dos dias e meses dinamicamente
-    atualizarCabecalhoDias(minDate, maxDate);
-
-    // Calcular o número total de dias no período
+    
+    // Se projeto finalizado, limitar maxDate até a data do Go Live
+    if (dataGoLive && dataGoLive < maxDate) {
+        maxDate = dataGoLive;
+    }
+    
     const totalDias = Math.ceil((maxDate - minDate) / (1000 * 60 * 60 * 24)) + 1;
-
-    implantacao.fases.forEach((fase) => {
+    
+    // Atualizar cabeçalho dos dias
+    atualizarCabecalhoDias(minDate, maxDate);
+    
+    // Criar linhas para cada fase
+    implantacao.fases.forEach(fase => {
         const row = document.createElement("tr");
-
+        
         // Célula da fase
         const faseCell = document.createElement("td");
         faseCell.className = "fase-nome";
         faseCell.textContent = fase.nome;
+        
+        // Destacar fases especiais
+        const faseNomeLower = fase.nome.toLowerCase();
+        const isKickOff = faseNomeLower.includes('kick off') || faseNomeLower.includes('kickoff');
+        const isGoLive = faseNomeLower.includes('go live') || faseNomeLower.includes('golive');
+        
+        if (isGoLive && (fase.status === 'concluido-prazo' || fase.status === 'concluido-fora')) {
+            faseCell.style.fontWeight = 'bold';
+            faseCell.style.color = '#4CAF50';
+            faseCell.innerHTML += ' ✅';
+        } else if (isKickOff && (fase.status === 'concluido-prazo' || fase.status === 'concluido-fora')) {
+            faseCell.style.fontWeight = 'bold';
+            faseCell.style.color = '#2196F3';
+            faseCell.innerHTML += ' 📍';
+        }
+        
         row.appendChild(faseCell);
 
         // Célula do previsto
@@ -547,19 +955,34 @@ function carregarTimelineDetalhada(implantacao) {
                 statusBar.textContent = fase.nome;
 
                 // Adicionar marcadores especiais
-                if (fase.nome === "Kick Off") {
+                if (isKickOff) {
                     statusBar.innerHTML = "⭐";
                     statusBar.className += " tooltip";
                     statusBar.setAttribute("data-tooltip", "Reunião de alinhamento");
+                    
+                    if (fase.status === 'concluido-prazo' || fase.status === 'concluido-fora') {
+                        statusBar.innerHTML = "⭐📍";
+                        statusBar.setAttribute("data-tooltip", "Kick Off - PROJETO INICIADO");
+                        statusBar.style.backgroundColor = "#2196F3";
+                    }
+                } else if (isGoLive) {
+                    statusBar.innerHTML = "🏴";
+                    statusBar.className += " tooltip";
+                    statusBar.setAttribute("data-tooltip", "Go Live");
+                    
+                    if (fase.status === 'concluido-prazo' || fase.status === 'concluido-fora') {
+                        statusBar.innerHTML = "🏴✅";
+                        statusBar.setAttribute("data-tooltip", "Go Live - PROJETO FINALIZADO");
+                        statusBar.style.backgroundColor = "#4CAF50";
+                    }
                 }
 
-                timelineCells[0].style.position = "relative"; // Make the first cell a positioning context
+                timelineCells[0].style.position = "relative";
                 timelineCells[0].appendChild(statusBar);
             }
         }
 
         timelineCells.forEach(cell => row.appendChild(cell));
-
         timelineBody.appendChild(row);
     });
 }
@@ -568,8 +991,8 @@ function carregarTimelineDetalhada(implantacao) {
 function atualizarCabecalhoDias(minDate, maxDate) {
     const diasHeader = document.getElementById("dias-header");
     const mesesHeader = document.getElementById("meses-header");
-    diasHeader.innerHTML = "<th></th><th></th><th></th><th></th>"; // Células vazias para fase, previsto, realizado e porcentagem
-    mesesHeader.innerHTML = "<th></th><th></th><th></th><th></th>"; // Células vazias para fase, previsto, realizado e porcentagem
+    diasHeader.innerHTML = "<th></th><th></th><th></th>"; // Células vazias para fase, previsto, realizado
+    mesesHeader.innerHTML = "<th></th><th></th><th></th>"; // Células vazias para fase, previsto, realizado
 
     let currentMonth = new Date(minDate);
     let monthColspan = 0;
@@ -615,6 +1038,45 @@ function preencherResumoStatus(implantacao) {
     const resumoConteudo = document.getElementById('resumo-conteudo');
     resumoConteudo.innerHTML = '';
     
+    // Verificar status do projeto
+    const goLiveConcluido = temGoLiveConcluido(implantacao);
+    const kickOffConcluido = temKickOffConcluido(implantacao);
+    const dataKickOff = getDataKickOff(implantacao);
+    const projetoNaoIniciado = dataKickOff && !kickOffConcluido;
+    
+    // Adicionar mensagem especial baseado no status
+    if (goLiveConcluido) {
+        const mensagemFinalizado = document.createElement('div');
+        mensagemFinalizado.style.cssText = `
+            background: #e8f5e8;
+            border: 2px solid #4CAF50;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            text-align: center;
+        `;
+        mensagemFinalizado.innerHTML = `
+            <h4 style="color: #4CAF50; margin: 0 0 10px 0;">🎉 PROJETO FINALIZADO</h4>
+            <p style="margin: 0; color: #2e7d32;">O Go Live foi concluído com sucesso. Este projeto está finalizado.</p>
+        `;
+        resumoConteudo.appendChild(mensagemFinalizado);
+    } else if (projetoNaoIniciado) {
+        const mensagemNaoIniciado = document.createElement('div');
+        mensagemNaoIniciado.style.cssText = `
+            background: #fff3e0;
+            border: 2px solid #FF9800;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            text-align: center;
+        `;
+        mensagemNaoIniciado.innerHTML = `
+            <h4 style="color: #FF9800; margin: 0 0 10px 0;">⏳ PROJETO NÃO INICIADO</h4>
+            <p style="margin: 0; color: #e65100;">O Kick Off ainda não foi realizado. O projeto aguarda início.</p>
+        `;
+        resumoConteudo.appendChild(mensagemNaoIniciado);
+    }
+    
     // Criar container para as frases editáveis
     const frasesContainer = document.createElement('div');
     frasesContainer.id = 'frases-container';
@@ -631,8 +1093,12 @@ function preencherResumoStatus(implantacao) {
         const fraseTexto = document.createElement('p');
         fraseTexto.textContent = `• ${item}`;
         fraseTexto.style.marginBottom = '8px';
-        fraseTexto.style.cursor = 'pointer';
-        fraseTexto.title = 'Clique para editar';
+        fraseTexto.style.cursor = goLiveConcluido ? 'default' : 'pointer';
+        fraseTexto.title = goLiveConcluido ? 'Projeto finalizado - edição desabilitada' : 'Clique para editar';
+        
+        if (goLiveConcluido) {
+            fraseTexto.style.color = '#666';
+        }
         
         const fraseInput = document.createElement('textarea');
         fraseInput.value = item;
@@ -644,6 +1110,7 @@ function preencherResumoStatus(implantacao) {
         fraseInput.style.padding = '5px';
         fraseInput.style.fontSize = '14px';
         fraseInput.style.resize = 'vertical';
+        fraseInput.disabled = goLiveConcluido;
         
         const botoesDiv = document.createElement('div');
         botoesDiv.style.display = 'none';
@@ -658,6 +1125,7 @@ function preencherResumoStatus(implantacao) {
         btnSalvar.style.border = 'none';
         btnSalvar.style.borderRadius = '3px';
         btnSalvar.style.cursor = 'pointer';
+        btnSalvar.disabled = goLiveConcluido;
         
         const btnCancelar = document.createElement('button');
         btnCancelar.textContent = 'Cancelar';
@@ -670,62 +1138,65 @@ function preencherResumoStatus(implantacao) {
         
         const btnRemover = document.createElement('button');
         btnRemover.textContent = '🗑️';
-        btnRemover.title = 'Remover observação';
+        btnRemover.title = goLiveConcluido ? 'Projeto finalizado - edição desabilitada' : 'Remover observação';
         btnRemover.style.padding = '5px 8px';
-        btnRemover.style.backgroundColor = '#ff9800';
+        btnRemover.style.backgroundColor = goLiveConcluido ? '#ccc' : '#ff9800';
         btnRemover.style.color = 'white';
         btnRemover.style.border = 'none';
         btnRemover.style.borderRadius = '3px';
-        btnRemover.style.cursor = 'pointer';
+        btnRemover.style.cursor = goLiveConcluido ? 'not-allowed' : 'pointer';
         btnRemover.style.marginLeft = '8px';
         btnRemover.style.fontSize = '12px';
+        btnRemover.disabled = goLiveConcluido;
         
-        // Event listeners para edição
-        fraseTexto.addEventListener('click', () => {
-            fraseTexto.style.display = 'none';
-            fraseInput.style.display = 'block';
-            botoesDiv.style.display = 'block';
-            fraseInput.focus();
-        });
-        
-        btnSalvar.addEventListener('click', async () => {
-            const novoTexto = fraseInput.value.trim();
-            if (novoTexto) {
-                implantacaoAtual.resumoOperacional[index] = novoTexto;
-                fraseTexto.textContent = `• ${novoTexto}`;
-                
-                try {
-                    // Salvar no Supabase
-                    await SupabaseService.atualizarImplantacao(implantacaoAtual.id, implantacaoAtual);
-                    
-                    // Atualizar na lista local
-                    const indexImplantacao = implantacoes.findIndex(imp => imp.id === implantacaoAtual.id);
-                    if (indexImplantacao !== -1) {
-                        implantacoes[indexImplantacao] = { ...implantacaoAtual };
-                    }
-                    
-                    mostrarMensagem('Observação atualizada com sucesso!', 'sucesso');
-                } catch (error) {
-                    console.error('Erro ao salvar observação:', error);
-                    mostrarMensagem('Erro ao salvar observação. Tente novamente.', 'erro');
-                }
-            }
+        // Event listeners para edição (só se projeto não finalizado)
+        if (!goLiveConcluido) {
+            fraseTexto.addEventListener('click', () => {
+                fraseTexto.style.display = 'none';
+                fraseInput.style.display = 'block';
+                botoesDiv.style.display = 'block';
+                fraseInput.focus();
+            });
             
-            fraseTexto.style.display = 'block';
-            fraseInput.style.display = 'none';
-            botoesDiv.style.display = 'none';
-        });
-        
-        btnCancelar.addEventListener('click', () => {
-            fraseInput.value = implantacaoAtual.resumoOperacional[index];
-            fraseTexto.style.display = 'block';
-            fraseInput.style.display = 'none';
-            botoesDiv.style.display = 'none';
-        });
-        
-        btnRemover.addEventListener('click', () => {
-            removerObservacao(index);
-        });
+            btnSalvar.addEventListener('click', async () => {
+                const novoTexto = fraseInput.value.trim();
+                if (novoTexto) {
+                    implantacaoAtual.resumoOperacional[index] = novoTexto;
+                    fraseTexto.textContent = `• ${novoTexto}`;
+                    
+                    try {
+                        // Salvar no Supabase
+                        await SupabaseService.atualizarImplantacao(implantacaoAtual.id, implantacaoAtual);
+                        
+                        // Atualizar na lista local
+                        const indexImplantacao = implantacoes.findIndex(imp => imp.id === implantacaoAtual.id);
+                        if (indexImplantacao !== -1) {
+                            implantacoes[indexImplantacao] = { ...implantacaoAtual };
+                        }
+                        
+                        mostrarMensagem('Observação atualizada com sucesso!', 'sucesso');
+                    } catch (error) {
+                        console.error('Erro ao salvar observação:', error);
+                        mostrarMensagem('Erro ao salvar observação. Tente novamente.', 'erro');
+                    }
+                }
+                
+                fraseTexto.style.display = 'block';
+                fraseInput.style.display = 'none';
+                botoesDiv.style.display = 'none';
+            });
+            
+            btnCancelar.addEventListener('click', () => {
+                fraseInput.value = implantacaoAtual.resumoOperacional[index];
+                fraseTexto.style.display = 'block';
+                fraseInput.style.display = 'none';
+                botoesDiv.style.display = 'none';
+            });
+            
+            btnRemover.addEventListener('click', () => {
+                removerObservacao(index);
+            });
+        }
         
         botoesDiv.appendChild(btnSalvar);
         botoesDiv.appendChild(btnCancelar);
@@ -738,31 +1209,50 @@ function preencherResumoStatus(implantacao) {
         frasesContainer.appendChild(fraseDiv);
     });
     
-    // Botão para adicionar nova frase
-    const btnAdicionarFrase = document.createElement('button');
-    btnAdicionarFrase.textContent = '+ Adicionar Nova Observação';
-    btnAdicionarFrase.style.padding = '10px 15px';
-    btnAdicionarFrase.style.backgroundColor = '#2196F3';
-    btnAdicionarFrase.style.color = 'white';
-    btnAdicionarFrase.style.border = 'none';
-    btnAdicionarFrase.style.borderRadius = '5px';
-    btnAdicionarFrase.style.cursor = 'pointer';
-    btnAdicionarFrase.style.marginTop = '15px';
-    
-    btnAdicionarFrase.addEventListener('click', () => {
-        adicionarNovaObservacao();
-    });
-    
-    resumoConteudo.appendChild(frasesContainer);
-    resumoConteudo.appendChild(btnAdicionarFrase);
+    // Botão para adicionar nova frase (só se projeto não finalizado)
+    if (!goLiveConcluido) {
+        const btnAdicionarFrase = document.createElement('button');
+        btnAdicionarFrase.textContent = '+ Adicionar Nova Observação';
+        btnAdicionarFrase.style.padding = '10px 15px';
+        btnAdicionarFrase.style.backgroundColor = '#2196F3';
+        btnAdicionarFrase.style.color = 'white';
+        btnAdicionarFrase.style.border = 'none';
+        btnAdicionarFrase.style.borderRadius = '5px';
+        btnAdicionarFrase.style.cursor = 'pointer';
+        btnAdicionarFrase.style.marginTop = '15px';
+        
+        btnAdicionarFrase.addEventListener('click', () => {
+            adicionarNovaObservacao();
+        });
+        
+        resumoConteudo.appendChild(frasesContainer);
+        resumoConteudo.appendChild(btnAdicionarFrase);
+    } else {
+        resumoConteudo.appendChild(frasesContainer);
+    }
     
     const statusBadge = document.getElementById('status-badge');
-    statusBadge.textContent = implantacao.status;
+    let statusFinal = implantacao.status;
+    
+    if (goLiveConcluido) {
+        statusFinal = 'Finalizado';
+    } else if (projetoNaoIniciado) {
+        statusFinal = 'Não Iniciado';
+    }
+    
+    statusBadge.textContent = statusFinal;
     statusBadge.className = 'status-badge';
     
-    switch (implantacao.status.toLowerCase()) {
+    switch (statusFinal.toLowerCase()) {
         case 'finalizado':
             statusBadge.classList.add('status-finalizado');
+            statusBadge.style.backgroundColor = '#4CAF50';
+            statusBadge.style.color = 'white';
+            break;
+        case 'não iniciado':
+            statusBadge.classList.add('status-nao-iniciado');
+            statusBadge.style.backgroundColor = '#FF9800';
+            statusBadge.style.color = 'white';
             break;
         case 'em andamento':
             statusBadge.classList.add('status-em-andamento');
@@ -776,6 +1266,12 @@ function preencherResumoStatus(implantacao) {
 // Abrir modal para editar timeline
 function abrirModalEditarTimeline() {
     if (!implantacaoAtual) return;
+    
+    // Verificar se projeto está finalizado
+    if (temGoLiveConcluido(implantacaoAtual)) {
+        mostrarMensagem('Não é possível editar a timeline de um projeto finalizado!', 'erro');
+        return;
+    }
     
     document.getElementById('modal-empresa-nome').textContent = implantacaoAtual.empresa;
     document.getElementById('modal-editar-timeline').classList.remove('hidden');
@@ -793,41 +1289,60 @@ function carregarFasesEditor() {
     const fasesEditor = document.getElementById('fases-editor');
     fasesEditor.innerHTML = '';
     
+    const goLiveConcluido = temGoLiveConcluido(implantacaoAtual);
+    
     implantacaoAtual.fases.forEach((fase, index) => {
-        const faseItem = criarItemFaseEditor(fase, index);
+        const faseItem = criarItemFaseEditor(fase, index, goLiveConcluido);
         fasesEditor.appendChild(faseItem);
     });
 }
 
 // Criar item de fase no editor
-function criarItemFaseEditor(fase, index) {
+function criarItemFaseEditor(fase, index, projetoFinalizado = false) {
     const faseDiv = document.createElement('div');
     faseDiv.className = 'fase-item';
     faseDiv.dataset.index = index;
     
+    const faseNomeLower = fase.nome.toLowerCase();
+    const isKickOff = faseNomeLower.includes('kick off') || faseNomeLower.includes('kickoff');
+    const isGoLive = faseNomeLower.includes('go live') || faseNomeLower.includes('golive');
+    const kickOffConcluido = isKickOff && (fase.status === 'concluido-prazo' || fase.status === 'concluido-fora');
+    const goLiveConcluido = isGoLive && (fase.status === 'concluido-prazo' || fase.status === 'concluido-fora');
+    
     faseDiv.innerHTML = `
         <div class="fase-header">
-            <div class="fase-titulo">Fase ${index + 1}</div>
+            <div class="fase-titulo">
+                Fase ${index + 1}
+                ${kickOffConcluido ? ' 📍 INICIADO' : ''}
+                ${goLiveConcluido ? ' ✅ FINALIZADO' : ''}
+            </div>
             <div class="fase-actions">
-                <button type="button" class="btn-fase-action btn-remover-fase" onclick="removerFase(${index})">🗑️ Remover</button>
+                <button type="button" class="btn-fase-action btn-remover-fase" onclick="removerFase(${index})" 
+                    ${projetoFinalizado ? 'disabled title="Projeto finalizado - edição desabilitada"' : ''}>
+                    🗑️ Remover
+                </button>
             </div>
         </div>
         <div class="fase-form">
             <div class="form-field">
                 <label>Nome da Fase</label>
-                <input type="text" value="${fase.nome}" data-field="nome">
+                <input type="text" value="${fase.nome}" data-field="nome" 
+                    ${projetoFinalizado ? 'disabled' : ''}>
             </div>
             <div class="form-field">
                 <label>Previsto</label>
-                <input type="number" value="${fase.previsto}" data-field="previsto" min="0">
+                <input type="number" value="${fase.previsto}" data-field="previsto" min="0" 
+                    ${projetoFinalizado ? 'disabled' : ''}>
             </div>
             <div class="form-field">
                 <label>Realizado</label>
-                <input type="number" value="${fase.realizado}" data-field="realizado" min="0" onchange="atualizarProgressoEmTempoReal()">
+                <input type="number" value="${fase.realizado}" data-field="realizado" min="0" 
+                    onchange="atualizarProgressoEmTempoReal()" 
+                    ${projetoFinalizado ? 'disabled' : ''}>
             </div>
             <div class="form-field">
                 <label>Status</label>
-                <select data-field="status">
+                <select data-field="status" ${projetoFinalizado ? 'disabled' : ''}>
                     <option value="pendente" ${fase.status === 'pendente' ? 'selected' : ''}>Pendente</option>
                     <option value="andamento" ${fase.status === 'andamento' ? 'selected' : ''}>Em Andamento</option>
                     <option value="concluido-prazo" ${fase.status === 'concluido-prazo' ? 'selected' : ''}>Concluído no Prazo</option>
@@ -837,20 +1352,36 @@ function criarItemFaseEditor(fase, index) {
             </div>
             <div class="form-field">
                 <label>Data Início</label>
-                <input type="date" value="${fase.inicio}" data-field="inicio">
+                <input type="date" value="${fase.inicio}" data-field="inicio" 
+                    ${projetoFinalizado ? 'disabled' : ''}>
             </div>
             <div class="form-field">
                 <label>Data Fim</label>
-                <input type="date" value="${fase.fim}" data-field="fim">
+                <input type="date" value="${fase.fim}" data-field="fim" 
+                    ${projetoFinalizado ? 'disabled' : ''}>
             </div>
         </div>
     `;
+    
+    // Destacar visualmente fases especiais
+    if (kickOffConcluido) {
+        faseDiv.style.backgroundColor = '#e3f2fd';
+        faseDiv.style.border = '2px solid #2196F3';
+    } else if (goLiveConcluido) {
+        faseDiv.style.backgroundColor = '#e8f5e8';
+        faseDiv.style.border = '2px solid #4CAF50';
+    }
     
     return faseDiv;
 }
 
 // Adicionar nova fase
 function adicionarNovaFase() {
+    if (temGoLiveConcluido(implantacaoAtual)) {
+        mostrarMensagem('Não é possível adicionar fases a um projeto finalizado!', 'erro');
+        return;
+    }
+    
     const novaFase = {
         nome: "Nova Fase",
         previsto: 1,
@@ -867,6 +1398,11 @@ function adicionarNovaFase() {
 
 // Remover fase
 function removerFase(index) {
+    if (temGoLiveConcluido(implantacaoAtual)) {
+        mostrarMensagem('Não é possível remover fases de um projeto finalizado!', 'erro');
+        return;
+    }
+    
     if (implantacaoAtual.fases.length <= 1) {
         mostrarMensagem('Não é possível remover a última fase!', 'erro');
         return;
@@ -881,6 +1417,11 @@ function removerFase(index) {
 
 // Salvar alterações da timeline
 async function salvarAlteracoesTimeline() {
+    if (temGoLiveConcluido(implantacaoAtual)) {
+        mostrarMensagem('Não é possível editar a timeline de um projeto finalizado!', 'erro');
+        return;
+    }
+    
     const fasesItems = document.querySelectorAll('.fase-item');
     
     fasesItems.forEach((item, index) => {
@@ -916,68 +1457,27 @@ async function salvarAlteracoesTimeline() {
         carregarPainelProjetos();
         carregarTimelineDetalhada(implantacaoAtual);
         atualizarBarraProgresso(implantacaoAtual.progresso);
+        preencherResumoStatus(implantacaoAtual);
         
         fecharModalEditarTimeline();
         mostrarMensagem('Timeline atualizada com sucesso!', 'sucesso');
         
+        // Verificar mudanças de status importantes
+        if (temGoLiveConcluido(implantacaoAtual)) {
+            mostrarMensagem('🎉 Parabéns! O Go Live foi concluído. O projeto está finalizado!', 'sucesso');
+        } else if (temKickOffConcluido(implantacaoAtual)) {
+            mostrarMensagem('🚀 Kick Off concluído! O projeto foi iniciado oficialmente.', 'sucesso');
+        }
+        
+        // Recarregar a página de status para mostrar as mudanças
+        setTimeout(() => {
+            exibirStatusImplantacao(implantacaoAtual);
+        }, 1000);
+        
     } catch (error) {
-        console.error('Erro ao salvar alterações:', error);
+        console.error('Erro ao salvar timeline:', error);
         mostrarMensagem('Erro ao salvar alterações. Tente novamente.', 'erro');
     }
-}
-
-// Recalcular progresso baseado nas fases
-function recalcularProgresso() {
-    let totalPrevisto = 0;
-    let totalRealizado = 0;
-    
-    implantacaoAtual.fases.forEach(fase => {
-        totalPrevisto += parseInt(fase.previsto) || 0;
-        totalRealizado += parseInt(fase.realizado) || 0;
-    });
-    
-    if (totalPrevisto > 0) {
-        implantacaoAtual.progresso = Math.round((totalRealizado / totalPrevisto) * 100);
-    } else {
-        implantacaoAtual.progresso = 0;
-    }
-    
-    // Atualizar status geral
-    if (implantacaoAtual.progresso === 100) {
-        implantacaoAtual.status = "Finalizado";
-    } else if (implantacaoAtual.progresso > 0) {
-        const temAtraso = implantacaoAtual.fases.some(fase => fase.status === 'atrasado');
-        implantacaoAtual.status = temAtraso ? "Atrasado" : "Em andamento";
-    } else {
-        implantacaoAtual.status = "Pendente";
-    }
-}
-
-// Atualizar status dos meses baseado nas fases
-function atualizarStatusMeses() {
-    // Resetar todos os meses para pendente
-    Object.keys(implantacaoAtual.statusMeses).forEach(mes => {
-        implantacaoAtual.statusMeses[mes] = ["pendente", "pendente", "pendente", "pendente"];
-    });
-    
-    // Aplicar status das fases aos meses correspondentes
-    implantacaoAtual.fases.forEach(fase => {
-        if (fase.inicio && fase.fim) {
-            const dataInicio = new Date(fase.inicio);
-            const dataFim = new Date(fase.fim);
-            
-            // Simplificação: aplicar status aos meses entre início e fim
-            const mesInicio = dataInicio.getMonth();
-            const mesFim = dataFim.getMonth();
-            
-            for (let mes = mesInicio; mes <= mesFim; mes++) {
-                const nomeMes = meses[mes];
-                if (implantacaoAtual.statusMeses[nomeMes]) {
-                    implantacaoAtual.statusMeses[nomeMes] = [fase.status, fase.status, fase.status, fase.status];
-                }
-            }
-        }
-    });
 }
 
 // Abrir modal para confirmar exclusão
@@ -1039,6 +1539,7 @@ function abrirModalAdicionar() {
 function fecharModal() {
     document.getElementById('modal-adicionar').classList.add('hidden');
 }
+
 // Adicionar nova implantação
 async function adicionarNovaImplantacao(e) {
     e.preventDefault();
@@ -1067,7 +1568,7 @@ async function adicionarNovaImplantacao(e) {
             especialista: especialista,
             logo: logoUrl,
             progresso: 0,
-            status: "Pendente",
+            status: "Não Iniciado",
             statusMeses: {
                 janeiro: ["pendente", "pendente", "pendente", "pendente"],
                 fevereiro: ["pendente", "pendente", "pendente", "pendente"],
@@ -1093,7 +1594,7 @@ async function adicionarNovaImplantacao(e) {
             ],
             resumoOperacional: [
                 "Projeto recém-criado.",
-                "Aguardando início das atividades."
+                "Aguardando definição de datas e início das atividades."
             ]
         };
         
@@ -1199,6 +1700,32 @@ style.textContent = `
             opacity: 1;
         }
     }
+    
+    .sem-dados {
+        font-size: 14px;
+        color: #999;
+        font-style: italic;
+    }
+    
+    .projeto-finalizado {
+        background-color: #f0f8f0 !important;
+        border-left: 4px solid #4CAF50 !important;
+    }
+    
+    .projeto-nao-iniciado {
+        background-color: #f8f8f0 !important;
+        border-left: 4px solid #FF9800 !important;
+    }
+    
+    .status-finalizado {
+        background-color: #4CAF50 !important;
+        color: white !important;
+    }
+    
+    .status-nao-iniciado {
+        background-color: #FF9800 !important;
+        color: white !important;
+    }
 `;
 document.head.appendChild(style);
 
@@ -1224,8 +1751,6 @@ document.addEventListener('keydown', function(e) {
     }
 });
 
-
-
 // Função para atualizar progresso em tempo real quando o campo "realizado" é alterado
 function atualizarProgressoEmTempoReal() {
     if (!implantacaoAtual) return;
@@ -1250,6 +1775,13 @@ function atualizarProgressoEmTempoReal() {
         novoProgresso = Math.round((totalRealizado / totalPrevisto) * 100);
     }
     
+    // Aplicar regras especiais de progresso
+    if (temGoLiveConcluido(implantacaoAtual)) {
+        novoProgresso = 100;
+    } else if (getDataKickOff(implantacaoAtual) && !temKickOffConcluido(implantacaoAtual)) {
+        novoProgresso = 0;
+    }
+    
     // Atualizar a barra de progresso na tela de status se estiver visível
     if (!document.getElementById('status-implantacao').classList.contains('hidden')) {
         atualizarBarraProgresso(novoProgresso);
@@ -1259,11 +1791,15 @@ function atualizarProgressoEmTempoReal() {
     mostrarMensagem(`Progresso atualizado: ${novoProgresso}%`, 'info');
 }
 
-
-
 // Função para adicionar nova observação
 async function adicionarNovaObservacao() {
     if (!implantacaoAtual) return;
+    
+    // Verificar se projeto está finalizado
+    if (temGoLiveConcluido(implantacaoAtual)) {
+        mostrarMensagem('Não é possível adicionar observações a um projeto finalizado!', 'erro');
+        return;
+    }
     
     const novaObservacao = "Nova observação";
     implantacaoAtual.resumoOperacional.push(novaObservacao);
@@ -1293,6 +1829,12 @@ async function adicionarNovaObservacao() {
 // Função para remover observação
 async function removerObservacao(index) {
     if (!implantacaoAtual || index < 0 || index >= implantacaoAtual.resumoOperacional.length) return;
+    
+    // Verificar se projeto está finalizado
+    if (temGoLiveConcluido(implantacaoAtual)) {
+        mostrarMensagem('Não é possível remover observações de um projeto finalizado!', 'erro');
+        return;
+    }
     
     if (implantacaoAtual.resumoOperacional.length <= 1) {
         mostrarMensagem('Deve haver pelo menos uma observação!', 'erro');
