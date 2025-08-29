@@ -7,6 +7,53 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+<script>
+// Funções auxiliares para manipulação de datas sem problemas de fuso horário
+function formatDateForInput(dateString) {
+    if (!dateString) return "";
+    
+    // Se a data já está no formato YYYY-MM-DD, retorna diretamente
+    if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        return dateString;
+    }
+    
+    // Para datas ISO, extrair apenas a parte da data
+    if (dateString.includes("T")) {
+        return dateString.split("T")[0];
+    }
+    
+    // Para outras datas, criar a data e extrair os componentes manualmente
+    const date = new Date(dateString);
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(date.getUTCDate()).padStart(2, "0");
+    
+    return `${year}-${month}-${day}`;
+}
+
+function formatDateForDisplay(dateString) {
+    if (!dateString) return "Não informada";
+    
+    // Se a data está no formato YYYY-MM-DD, criar Date sem problemas de fuso horário
+    if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        const [year, month, day] = dateString.split("-");
+        const date = new Date(year, month - 1, day); // month - 1 porque Date usa 0-11 para meses
+        return date.toLocaleDateString("pt-BR");
+    }
+    
+    // Para datas ISO, extrair apenas a parte da data e processar
+    if (dateString.includes("T")) {
+        const datePart = dateString.split("T")[0];
+        const [year, month, day] = datePart.split("-");
+        const date = new Date(year, month - 1, day);
+        return date.toLocaleDateString("pt-BR");
+    }
+    
+    // Para outras datas, usar o método padrão
+    return new Date(dateString).toLocaleDateString("pt-BR");
+}
+</script>
 <style>
 button, a.button, .btn {
     font-weight: 500;
@@ -11167,7 +11214,7 @@ document.addEventListener('DOMContentLoaded', function() {
 function logoutTryvia() {
     sessionStorage.removeItem('tryvia_logged');
     localStorage.removeItem('username');
-    window.location.href = 'https://tryvia.github.io/TryviaBI/tryvia_bi_login%20(1).html';
+   window.location.href = 'https://tryvia.github.io/TryviaBI/tryvia_bi_login%20(1).html';
 }
 
 // ===== FUNÇÕES PARA GERENCIAR USUÁRIOS =====
@@ -13872,11 +13919,11 @@ function renderizarImplantacoes(implantacoes) {
                     </div>
                     <div style="min-width: 0;">
                         <strong style="color: #4fc3f7;">Data de Início:</strong><br>
-                        <span style="color: #333;">${implantacao.data_inicio ? new Date(implantacao.data_inicio).toLocaleDateString('pt-BR') : 'Não informada'}</span>
+                        <span style="color: #333;">${formatDateForDisplay(implantacao.data_inicio)}</span>
                     </div>
                     <div style="min-width: 0;">
                         <strong style="color: #4fc3f7;">Data de Término:</strong><br>
-                        <span style="color: #333;">${implantacao.data_termino ? new Date(implantacao.data_termino).toLocaleDateString('pt-BR') : 'Não informada'}</span>
+                        <span style="color: #333;">${formatDateForDisplay(implantacao.data_termino)}</span>
                     </div>
                     <div style="min-width: 0;">
                         <strong style="color: #4fc3f7;">Tickets Pendentes:</strong><br>
@@ -14056,9 +14103,9 @@ function editarImplantacao(id) {
     }
     document.getElementById('novaImplantacaoData').value = dataCorrigida;
     
-    // Preencher datas de início e término
-    document.getElementById('novaImplantacaoInicio').value = implantacao.data_inicio || '';
-    document.getElementById('novaImplantacaoTermino').value = implantacao.data_termino || '';
+    // Preencher datas de início e término usando as funções auxiliares
+    document.getElementById("novaImplantacaoInicio").value = formatDateForInput(implantacao.data_inicio);
+    document.getElementById("novaImplantacaoTermino").value = formatDateForInput(implantacao.data_termino);
     
     document.getElementById('novaImplantacaoCliente').value = implantacao.cliente;
     document.getElementById('novaImplantacaoProjeto').value = implantacao.projeto;
