@@ -27,7 +27,7 @@ class SupabaseService {
             }
             
             const { data, error } = await supabaseClient
-                .from('implantacoes')
+                .from('painel_implantacoes')
                 .select('*')
                 .order('created_at', { ascending: false });
             
@@ -51,7 +51,7 @@ class SupabaseService {
             }
             
             const { data, error } = await supabaseClient
-                .from('implantacoes')
+                .from('painel_implantacoes')
                 .insert([{
                     empresa: implantacao.empresa,
                     projeto: implantacao.projeto,
@@ -87,7 +87,7 @@ class SupabaseService {
             }
             
             const { data, error } = await supabaseClient
-                .from('implantacoes')
+                .from('painel_implantacoes')
                 .update({
                     empresa: implantacao.empresa,
                     projeto: implantacao.projeto,
@@ -125,7 +125,7 @@ class SupabaseService {
             }
             
             const { error } = await supabaseClient
-                .from('implantacoes')
+                .from('painel_implantacoes')
                 .delete()
                 .eq('id', id);
             
@@ -181,7 +181,7 @@ class SupabaseService {
             }
             
             const { data, error } = await supabaseClient
-                .from('implantacoes')
+                .from('painel_implantacoes')
                 .select('count', { count: 'exact', head: true });
             
             if (error) {
